@@ -2,7 +2,6 @@ package com.financetracker;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasKey;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -20,10 +19,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.MockMvcBuilderCustomizer;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -32,6 +29,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest
 @AutoConfigureMockMvc
+@Import(AsTestUser.class)
 class ApiIntegrationTest {
 
     private static final Path TEST_DB = Path.of("target", "test-db", "api.db");
@@ -43,19 +41,6 @@ class ApiIntegrationTest {
         registry.add("spring.datasource.url", () -> "jdbc:sqlite:" + TEST_DB + "?foreign_keys=on");
     }
 
-    private static final long TEST_USER_ID = 1L;
-
-    /** Every request made through the autowired MockMvc is authenticated as {@link #TEST_USER_ID}. */
-    @TestConfiguration
-    static class AsTestUser {
-
-        @Bean
-        MockMvcBuilderCustomizer authenticateAsTestUser() {
-            return builder -> builder.defaultRequest(
-                    get("/").with(jwt().jwt(token -> token.subject(String.valueOf(TEST_USER_ID)))));
-        }
-    }
-
     @Autowired
     MockMvc mvc;
 
@@ -65,7 +50,7 @@ class ApiIntegrationTest {
     @BeforeEach
     void ensureTestUserExists() {
         jdbc.update("INSERT OR IGNORE INTO users (id, email, password_hash) VALUES (?, 'api-test@local', 'x')",
-                TEST_USER_ID);
+                AsTestUser.ID);
     }
 
     // ---- accounts -------------------------------------------------------------------------

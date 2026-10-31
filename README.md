@@ -39,6 +39,29 @@ default is built in so the app starts locally; **always set your own value outsi
 | Categories | `GET/POST /api/v1/categories`, `GET/PUT/DELETE /api/v1/categories/{id}` |
 | Transactions | `GET/POST /api/v1/transactions`, `GET/PUT/DELETE /api/v1/transactions/{id}` |
 
+## CSV import
+
+`POST /api/v1/accounts/{id}/import` with a multipart `file` field imports a bank statement.
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" -F "file=@samples/statement-sample.csv" \
+     http://localhost:8080/api/v1/accounts/1/import
+```
+
+- Required columns: `date`, `amount`. Optional: `description`, `category` (Russian names `Дата`, `Сумма`,
+  `Описание`, `Категория` also work). Unknown categories are created automatically.
+- Tolerant of real-world exports: delimiter `,` `;` or tab, UTF-8 or windows-1251, dates `yyyy-MM-dd` or
+  `dd.MM.yyyy`, amounts like `-1250.50`, `-1 250,50`, `1,250.50`.
+- A bad row never aborts the import: the response lists it (`errors[].row`) and the valid rows are stored.
+- **Re-uploading is safe.** Every row gets a fingerprint (date, amount, description, and which occurrence of
+  that exact row it is), stored in `transactions.external_hash` under a unique index. Two identical coffees on
+  one day are both kept, but importing the same file twice adds nothing.
+- Limit: 2 MB per file.
+
+`samples/statement-sample.csv` is a generated demo statement (30 rows, 3 months).
+
+## Listing transactions
+
 `GET /api/v1/transactions` accepts `accountId`, `categoryId`, `from`, `to` (ISO dates),
 and paging/sorting (`page`, `size`, `sort`). Default order: newest first.
 
@@ -55,7 +78,7 @@ mvn test
 - [x] 1. Project skeleton, SQLite + Flyway schema
 - [x] 2. Accounts, categories, transactions (REST CRUD, validation, Swagger)
 - [x] 3. Authentication (JWT)
-- [ ] 4. CSV statement import with deduplication
+- [x] 4. CSV statement import with deduplication
 - [ ] 5. SQL analytics (window functions, month-over-month, top-N)
 - [ ] 6. Budgets, anomaly detection, forecast
 - [ ] 7. React dashboard
