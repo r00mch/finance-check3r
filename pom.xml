@@ -21,6 +21,7 @@
         <java.version>25</java.version>
         <sqlite-jdbc.version>3.50.3.0</sqlite-jdbc.version>
         <springdoc.version>2.8.9</springdoc.version>
+        <commons-csv.version>1.13.0</commons-csv.version>
     </properties>
 
     <dependencies>
@@ -53,6 +54,11 @@
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
             <version>${springdoc.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-csv</artifactId>
+            <version>${commons-csv.version}</version>
         </dependency>
         <!-- Hibernate dialect for SQLite lives in the community module -->
         <dependency>

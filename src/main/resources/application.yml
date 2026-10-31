@@ -11,6 +11,11 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  servlet:
+    multipart:
+      # a bank statement is a few hundred KB at most; reject anything bigger early
+      max-file-size: 2MB
+      max-request-size: 2MB
   jpa:
     database-platform: org.hibernate.community.dialect.SQLiteDialect
     # the schema is owned by Flyway; Hibernate must never touch it

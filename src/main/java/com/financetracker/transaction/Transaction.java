@@ -37,6 +37,10 @@ public class Transaction {
 
     private String description;
 
+    /** Fingerprint of the source CSV row; null for transactions entered by hand. */
+    @Column(name = "external_hash")
+    private String externalHash;
+
     protected Transaction() {
     }
 
@@ -52,6 +56,10 @@ public class Transaction {
         this.amountMinor = amountMinor;
         this.occurredOn = occurredOn;
         this.description = description;
+    }
+
+    public void setExternalHash(String externalHash) {
+        this.externalHash = externalHash;
     }
 
     public Long getId() {
