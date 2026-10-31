@@ -18,6 +18,13 @@ spring:
       ddl-auto: none
     open-in-view: false
 
+app:
+  jwt:
+    # HS256 key, at least 32 bytes. The default is for local development ONLY;
+    # in any real deployment set the JWT_SECRET environment variable.
+    secret: ${JWT_SECRET:dev-only-secret-change-me-dev-only-secret-change-me}
+    expiration: 1h
+
 management:
   endpoints:
     web:
