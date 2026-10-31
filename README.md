@@ -7,7 +7,7 @@ categorise spending, and see where the money goes.
 
 ## Stack
 
-- Java 25, Spring Boot 3.5, Spring Data JPA
+- Java 25, Spring Boot 3.5, Spring Data JPA, Spring Security (JWT)
 - SQLite + Flyway migrations
 - springdoc-openapi (Swagger UI)
 - JUnit 5 / Spring Boot Test
@@ -22,6 +22,15 @@ mvn spring-boot:run
 - Swagger UI: <http://localhost:8080/swagger-ui.html>
 - Health check: <http://localhost:8080/actuator/health>
 
+## Authentication
+
+`POST /api/v1/auth/register` and `POST /api/v1/auth/login` (JSON `{"email", "password"}`) return a JWT.
+Send it as `Authorization: Bearer <accessToken>` on every other endpoint. In Swagger UI use the
+**Authorize** button. Passwords are stored as BCrypt hashes; each user only ever sees their own data.
+
+The signing key comes from the `JWT_SECRET` environment variable (at least 32 bytes). A development
+default is built in so the app starts locally; **always set your own value outside local development**.
+
 ## API
 
 | Resource | Endpoints |
@@ -34,7 +43,6 @@ mvn spring-boot:run
 and paging/sorting (`page`, `size`, `sort`). Default order: newest first.
 
 Errors are returned as RFC 7807 problem details; validation failures include a per-field `errors` map.
-Until authentication is added (stage 3), all requests run as a built-in demo user.
 
 ## Test
 
@@ -46,7 +54,7 @@ mvn test
 
 - [x] 1. Project skeleton, SQLite + Flyway schema
 - [x] 2. Accounts, categories, transactions (REST CRUD, validation, Swagger)
-- [ ] 3. Authentication (JWT)
+- [x] 3. Authentication (JWT)
 - [ ] 4. CSV statement import with deduplication
 - [ ] 5. SQL analytics (window functions, month-over-month, top-N)
 - [ ] 6. Budgets, anomaly detection, forecast
