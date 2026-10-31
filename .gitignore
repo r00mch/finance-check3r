@@ -1,0 +1,28 @@
+# Build
+target/
+
+# Local SQLite database
+*.db
+*.db-shm
+*.db-wal
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Frontend (added in a later stage)
+node_modules/
+dist/
+
+# Python / Jupyter (analytics stage)
+.ipynb_checkpoints/
+__pycache__/
+.venv/
