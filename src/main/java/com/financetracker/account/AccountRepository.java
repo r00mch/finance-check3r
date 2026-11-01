@@ -10,6 +10,9 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
 
     Optional<Account> findByIdAndUserId(Long id, Long userId);
 
+    @Query("select distinct a.currency from Account a where a.userId = :userId order by a.currency")
+    List<String> findCurrencies(@Param("userId") Long userId);
+
     boolean existsByUserIdAndName(Long userId, String name);
 
     boolean existsByUserIdAndNameAndIdNot(Long userId, String name, Long id);
