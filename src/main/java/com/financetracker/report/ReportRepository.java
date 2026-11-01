@@ -7,6 +7,7 @@ import com.financetracker.report.Reports.MonthlySummary;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.List;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -171,6 +172,59 @@ class ReportRepository {
                     currentMinor, previousMinor, currentMinor - previousMinor,
                     percent(currentMinor - previousMinor, previousMinor));
         });
+    }
+
+    /** An expense together with statistics of the other expenses in its category. */
+    record AnomalyCandidate(long id, LocalDate date, String description, String category, long amount,
+            double peerMean, double peerMeanSquare) {
+    }
+
+    /**
+     * For every expense, the mean and mean-of-squares of the <b>other</b> expenses of the same category.
+     * The window frame {@code EXCLUDE CURRENT ROW} is what makes it leave-one-out: each row is compared
+     * with its peers only. The baseline always uses the whole history; {@code scope.from/to} merely select
+     * which expenses are reported. Categories with fewer than {@code minPeers} other expenses are skipped
+     * because a handful of values cannot define "normal". The standard deviation itself is derived in Java
+     * (see {@link AnomalyDetector}) since SQLite has no built-in STDDEV.
+     */
+    List<AnomalyCandidate> anomalyCandidates(ReportScope scope, int minPeers) {
+        String sql = """
+                WITH expenses AS (
+                    SELECT t.id, t.occurred_on, t.description,
+                           c.id AS category_id,
+                           COALESCE(c.name, 'Uncategorized') AS category,
+                           -t.amount_minor AS amount
+                    FROM transactions t
+                    JOIN accounts a        ON a.id = t.account_id
+                    LEFT JOIN categories c ON c.id = t.category_id
+                    WHERE t.amount_minor < 0 AND %s
+                ),
+                scored AS (
+                    SELECT id, occurred_on, description, category, amount,
+                           COUNT(*)                        OVER peers AS peer_count,
+                           AVG(amount)                     OVER peers AS peer_mean,
+                           AVG(1.0 * amount * amount)      OVER peers AS peer_mean_square
+                    FROM expenses
+                    WINDOW peers AS (
+                        PARTITION BY COALESCE(category_id, -1)
+                        ORDER BY id
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE CURRENT ROW)
+                )
+                SELECT id, occurred_on, description, category, amount, peer_mean, peer_mean_square
+                FROM scored
+                WHERE peer_count >= :minPeers
+                  AND (:rangeFrom IS NULL OR occurred_on >= :rangeFrom)
+                  AND (:rangeTo   IS NULL OR occurred_on <= :rangeTo)
+                """.formatted(SCOPE);
+        // the baseline CTE must see the whole history, so the date filter is applied only in the last SELECT
+        MapSqlParameterSource params = params(scope.withoutDates())
+                .addValue("minPeers", minPeers, Types.INTEGER)
+                .addValue("rangeFrom", scope.from() == null ? null : scope.from().toString(), Types.VARCHAR)
+                .addValue("rangeTo", scope.to() == null ? null : scope.to().toString(), Types.VARCHAR);
+        return jdbc.query(sql, params, (rs, i) -> new AnomalyCandidate(rs.getLong("id"),
+                LocalDate.parse(rs.getString("occurred_on")), rs.getString("description"),
+                rs.getString("category"), rs.getLong("amount"), rs.getDouble("peer_mean"),
+                rs.getDouble("peer_mean_square")));
     }
 
     // ---- helpers --------------------------------------------------------------------------

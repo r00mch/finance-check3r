@@ -1,6 +1,8 @@
 package com.financetracker.report;
 
+import com.financetracker.report.Reports.AnomalyReport;
 import com.financetracker.report.Reports.CategorySpendingReport;
+import com.financetracker.report.Reports.ForecastReport;
 import com.financetracker.report.Reports.MerchantReport;
 import com.financetracker.report.Reports.MonthComparisonReport;
 import com.financetracker.report.Reports.MonthlyReport;
@@ -64,6 +66,28 @@ public class ReportController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(defaultValue = "10") @Min(1) @Max(50) int limit) {
         return service.topMerchants(accountId, currency, from, to, limit);
+    }
+
+    @GetMapping("/anomalies")
+    @Operation(summary = "Unusually large expenses compared with the rest of their category (z-score)",
+            description = "A category needs at least 5 expenses. threshold = how many standard deviations "
+                    + "above the category's average an expense must be (1 to 10, default 2).")
+    AnomalyReport anomalies(
+            @RequestParam(required = false) Long accountId,
+            @RequestParam(required = false) @Pattern(regexp = ISO_CURRENCY) String currency,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(defaultValue = "2.0") double threshold,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int limit) {
+        return service.anomalies(accountId, currency, from, to, threshold, limit);
+    }
+
+    @GetMapping("/forecast")
+    @Operation(summary = "Forecast of next month's expenses: 3-month moving average and linear trend")
+    ForecastReport forecast(
+            @RequestParam(required = false) Long accountId,
+            @RequestParam(required = false) @Pattern(regexp = ISO_CURRENCY) String currency) {
+        return service.forecast(accountId, currency);
     }
 
     @GetMapping("/month-comparison")
