@@ -60,6 +60,28 @@ curl -H "Authorization: Bearer $TOKEN" -F "file=@samples/statement-sample.csv" \
 
 `samples/statement-sample.csv` is a generated demo statement (30 rows, 3 months).
 
+## Analytics
+
+All reports are plain SQL executed by SQLite (see `ReportRepository`): grouping, window functions and CTEs
+run inside the database in a single pass instead of looping over transactions in Java.
+
+| Endpoint | What it shows | SQL techniques |
+|----------|---------------|----------------|
+| `GET /api/v1/reports/spending-by-category` | Expenses per category and each category's share of the total | `GROUP BY`, `SUM() OVER ()` |
+| `GET /api/v1/reports/monthly` | Income, expenses, net, running net, month-over-month change, 3-month moving average, savings rate | recursive CTE, `LAG`, `SUM/AVG() OVER (... ROWS BETWEEN 2 PRECEDING ...)` |
+| `GET /api/v1/reports/top-merchants?limit=10` | Where the money goes: expenses grouped by description | `GROUP BY`, `ORDER BY ... LIMIT` |
+| `GET /api/v1/reports/month-comparison?month=2025-02` | Per-category expenses vs the previous month | conditional aggregation `SUM(CASE ...)` |
+
+Common filters: `accountId`, `currency`, `from`, `to`. Notes:
+
+- Reports are always in **one currency**; with accounts in several currencies pass `currency` or `accountId`
+  (otherwise `400`), so amounts in different currencies are never added together.
+- `monthly` includes months without transactions as zeros; otherwise "previous month" and the moving average
+  would silently skip gaps.
+- Percentages are `null` when the base is zero (e.g. a category bought for the first time).
+
+Try it on the demo data: import `samples/statement-sample.csv`, then open `/swagger-ui.html`.
+
 ## Listing transactions
 
 `GET /api/v1/transactions` accepts `accountId`, `categoryId`, `from`, `to` (ISO dates),
@@ -79,7 +101,7 @@ mvn test
 - [x] 2. Accounts, categories, transactions (REST CRUD, validation, Swagger)
 - [x] 3. Authentication (JWT)
 - [x] 4. CSV statement import with deduplication
-- [ ] 5. SQL analytics (window functions, month-over-month, top-N)
+- [x] 5. SQL analytics (window functions, month-over-month, top-N)
 - [ ] 6. Budgets, anomaly detection, forecast
 - [ ] 7. React dashboard
 - [ ] 8. Jupyter analysis notebook
