@@ -39,6 +39,29 @@ public final class Reports {
     public record MerchantReport(String currency, List<MerchantSpending> merchants) {
     }
 
+    /**
+     * @param categoryAverageMinor average of the category's <i>other</i> expenses
+     * @param zScore               standard deviations above that average
+     */
+    public record Anomaly(Long transactionId, java.time.LocalDate date, String description, String category,
+            long amountMinor, long categoryAverageMinor, double zScore) {
+    }
+
+    public record AnomalyReport(String currency, double threshold, List<Anomaly> anomalies) {
+    }
+
+    public record MonthExpense(String month, long expensesMinor) {
+    }
+
+    /**
+     * @param history              the months the forecast is based on (up to 6, oldest first)
+     * @param movingAverageMinor   average of the last 3 months
+     * @param trendMinor           straight-line trend continued one month; null with fewer than 3 months
+     */
+    public record ForecastReport(String currency, String lastMonth, String forecastMonth,
+            List<MonthExpense> history, Long movingAverageMinor, Long trendMinor) {
+    }
+
     public record CategoryChange(Long categoryId, String category, long currentMinor, long previousMinor,
             long deltaMinor, Double deltaPercent) {
     }

@@ -1,6 +1,7 @@
 package com.financetracker;
 
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -182,6 +183,119 @@ class ReportsIntegrationTest {
                 .andExpect(jsonPath("$.categories[?(@.category == 'Жильё')].deltaMinor").value(contains(0)));
     }
 
+    // ---- anomalies -------------------------------------------------------------------------
+
+    @Test
+    void oneHugePurchaseInAnOrdinaryCategoryIsFlagged() throws Exception {
+        long user = newUser();
+        long account = createAccount(user, "RUB");
+        seedFoodWithOneOutlier(user, account);
+
+        mvc.perform(get("/api/v1/reports/anomalies").with(as(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currency").value("RUB"))
+                .andExpect(jsonPath("$.threshold").value(2.0))
+                // only the 9 000.00 purchase: the ordinary ones are compared with peers that include it
+                .andExpect(jsonPath("$.anomalies.length()").value(1))
+                .andExpect(jsonPath("$.anomalies[0].category").value("Food"))
+                .andExpect(jsonPath("$.anomalies[0].amountMinor").value(900_000))
+                .andExpect(jsonPath("$.anomalies[0].categoryAverageMinor").value(99_625))
+                .andExpect(jsonPath("$.anomalies[0].zScore").value(greaterThan(100.0)));
+    }
+
+    @Test
+    void categoriesWithTooFewExpensesAreNeverFlagged() throws Exception {
+        long user = newUser();
+        long account = createAccount(user, "RUB");
+        long rare = createCategory(user, "Rare");
+        // 4 expenses: the big one has only 3 peers, which cannot define what is normal
+        addTransaction(user, account, rare, -100_000, "2025-01-01", "a");
+        addTransaction(user, account, rare, -100_000, "2025-01-02", "b");
+        addTransaction(user, account, rare, -100_000, "2025-01-03", "c");
+        addTransaction(user, account, rare, -900_000, "2025-01-04", "huge");
+
+        mvc.perform(get("/api/v1/reports/anomalies").with(as(user)))
+                .andExpect(jsonPath("$.anomalies.length()").value(0));
+    }
+
+    @Test
+    void dateRangeSelectsWhichAnomaliesAreReportedButNotTheBaseline() throws Exception {
+        long user = newUser();
+        long account = createAccount(user, "RUB");
+        seedFoodWithOneOutlier(user, account);
+
+        // the outlier is on 2025-01-09: a window that excludes it reports nothing...
+        mvc.perform(get("/api/v1/reports/anomalies").with(as(user)).param("from", "2025-02-01"))
+                .andExpect(jsonPath("$.anomalies.length()").value(0));
+        // ...and one that includes it still scores it against the whole history
+        mvc.perform(get("/api/v1/reports/anomalies").with(as(user)).param("from", "2025-01-09").param("to", "2025-01-09"))
+                .andExpect(jsonPath("$.anomalies.length()").value(1));
+    }
+
+    @Test
+    void aHigherThresholdReportsFewerAnomalies() throws Exception {
+        long user = newUser();
+        long account = createAccount(user, "RUB");
+        seedFoodWithOneOutlier(user, account);
+
+        mvc.perform(get("/api/v1/reports/anomalies").with(as(user)).param("threshold", "10"))
+                .andExpect(jsonPath("$.anomalies.length()").value(1)); // z is in the hundreds, still above 10
+        mvc.perform(get("/api/v1/reports/anomalies").with(as(user)).param("threshold", "0.5"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/v1/reports/anomalies").with(as(user)).param("threshold", "11"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void theSampleStatementHasNoAnomalies() throws Exception {
+        long user = newUser();
+        importSample(user, createAccount(user, "RUB"));
+
+        mvc.perform(get("/api/v1/reports/anomalies").with(as(user)))
+                .andExpect(jsonPath("$.anomalies.length()").value(0));
+    }
+
+    // ---- forecast --------------------------------------------------------------------------
+
+    @Test
+    void forecastCombinesMovingAverageAndTrend() throws Exception {
+        long user = newUser();
+        importSample(user, createAccount(user, "RUB"));
+
+        mvc.perform(get("/api/v1/reports/forecast").with(as(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.lastMonth").value("2025-03"))
+                .andExpect(jsonPath("$.forecastMonth").value("2025-04"))
+                .andExpect(jsonPath("$.history.length()").value(3))
+                .andExpect(jsonPath("$.history[0].month").value("2025-01"))
+                .andExpect(jsonPath("$.movingAverageMinor").value(4_293_402))
+                .andExpect(jsonPath("$.trendMinor").value(4_701_327));
+    }
+
+    @Test
+    void forecastWithTwoMonthsHasNoTrend() throws Exception {
+        long user = newUser();
+        long account = createAccount(user, "RUB");
+        addTransaction(user, account, -1_000, "2025-01-10", "a");
+        addTransaction(user, account, -3_000, "2025-02-10", "b");
+
+        mvc.perform(get("/api/v1/reports/forecast").with(as(user)))
+                .andExpect(jsonPath("$.movingAverageMinor").value(2_000))
+                .andExpect(jsonPath("$.trendMinor").value(nullValue()));
+    }
+
+    @Test
+    void forecastWithoutDataIsEmpty() throws Exception {
+        long user = newUser();
+        createAccount(user, "RUB");
+
+        mvc.perform(get("/api/v1/reports/forecast").with(as(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.lastMonth").value(nullValue()))
+                .andExpect(jsonPath("$.history.length()").value(0))
+                .andExpect(jsonPath("$.movingAverageMinor").value(nullValue()));
+    }
+
     // ---- currencies, ownership, validation -------------------------------------------------
 
     @Test
@@ -302,5 +416,33 @@ class ReportsIntegrationTest {
                                 {"accountId": %d, "amountMinor": %d, "occurredOn": "%s", "description": "%s"}"""
                                 .formatted(account, amountMinor, date, description)))
                 .andExpect(status().isCreated());
+    }
+
+    private void addTransaction(long user, long account, long categoryId, long amountMinor, String date,
+            String description) throws Exception {
+        mvc.perform(post("/api/v1/transactions").with(as(user)).contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"accountId": %d, "categoryId": %d, "amountMinor": %d, "occurredOn": "%s",
+                                 "description": "%s"}""".formatted(account, categoryId, amountMinor, date, description)))
+                .andExpect(status().isCreated());
+    }
+
+    private long createCategory(long user, String name) throws Exception {
+        String json = mvc.perform(post("/api/v1/categories").with(as(user)).contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name": "%s"}""".formatted(name)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        return ((Number) JsonPath.read(json, "$.id")).longValue();
+    }
+
+    /** Eight ordinary "Food" expenses of about 1 000.00 (mean 996.25) and one of 9 000.00 on 9 Jan. */
+    private void seedFoodWithOneOutlier(long user, long account) throws Exception {
+        long food = createCategory(user, "Food");
+        long[] ordinary = {-100_000, -95_000, -105_000, -98_000, -102_000, -99_000, -101_000, -97_000};
+        for (int i = 0; i < ordinary.length; i++) {
+            addTransaction(user, account, food, ordinary[i], "2025-01-0" + (i + 1), "groceries");
+        }
+        addTransaction(user, account, food, -900_000, "2025-01-09", "party");
     }
 }

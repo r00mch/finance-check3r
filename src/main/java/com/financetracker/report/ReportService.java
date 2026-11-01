@@ -5,14 +5,20 @@ import com.financetracker.account.AccountRepository;
 import com.financetracker.common.BadRequestException;
 import com.financetracker.common.CurrentUser;
 import com.financetracker.common.NotFoundException;
+import com.financetracker.report.Reports.Anomaly;
+import com.financetracker.report.Reports.AnomalyReport;
 import com.financetracker.report.Reports.CategoryChange;
 import com.financetracker.report.Reports.CategorySpending;
 import com.financetracker.report.Reports.CategorySpendingReport;
+import com.financetracker.report.Reports.ForecastReport;
 import com.financetracker.report.Reports.MerchantReport;
 import com.financetracker.report.Reports.MonthComparisonReport;
+import com.financetracker.report.Reports.MonthExpense;
 import com.financetracker.report.Reports.MonthlyReport;
+import com.financetracker.report.Reports.MonthlySummary;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.Comparator;
 import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,6 +26,13 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @Transactional(readOnly = true)
 public class ReportService {
+
+    /** A category needs this many <i>other</i> expenses before one of them can be called unusual. */
+    private static final int MIN_PEERS = 4;
+    private static final double MIN_THRESHOLD = 1.0;
+    private static final double MAX_THRESHOLD = 10.0;
+    private static final int HISTORY_MONTHS = 6;
+    private static final int MOVING_AVERAGE_WINDOW = 3;
 
     private final ReportRepository reports;
     private final AccountRepository accounts;
@@ -59,6 +72,47 @@ public class ReportService {
         Double percent = before > 0 ? Math.round(1000.0 * delta / before) / 10.0 : null;
         return new MonthComparisonReport(scope.currency(), month.toString(), previous.toString(),
                 current, before, delta, percent, categories);
+    }
+
+    /**
+     * Unusually large expenses: those whose amount is at least {@code threshold} standard deviations above
+     * the average of the other expenses in the same category, biggest deviation first.
+     */
+    public AnomalyReport anomalies(Long accountId, String currency, LocalDate from, LocalDate to,
+            double threshold, int limit) {
+        if (threshold < MIN_THRESHOLD || threshold > MAX_THRESHOLD) {
+            throw new BadRequestException("threshold must be between " + MIN_THRESHOLD + " and " + MAX_THRESHOLD);
+        }
+        ReportScope scope = scope(accountId, currency, from, to);
+        List<Anomaly> anomalies = reports.anomalyCandidates(scope, MIN_PEERS).stream()
+                .map(c -> new Anomaly(c.id(), c.date(), c.description(), c.category(), c.amount(),
+                        Math.round(c.peerMean()), AnomalyDetector.zScore(c.amount(), c.peerMean(), c.peerMeanSquare())))
+                .filter(a -> a.zScore() >= threshold)
+                .sorted(Comparator.comparingDouble(Anomaly::zScore).reversed())
+                .limit(limit)
+                .map(a -> new Anomaly(a.transactionId(), a.date(), a.description(), a.category(),
+                        a.amountMinor(), a.categoryAverageMinor(), Math.round(a.zScore() * 100) / 100.0))
+                .toList();
+        return new AnomalyReport(scope.currency(), threshold, anomalies);
+    }
+
+    /**
+     * Next month's total expenses, predicted from the months that have data (the report stops at the last of
+     * them; it does not guess about months the user never imported).
+     */
+    public ForecastReport forecast(Long accountId, String currency) {
+        ReportScope scope = scope(accountId, currency, null, null);
+        List<MonthlySummary> months = reports.monthly(scope);
+        List<MonthlySummary> recent = months.subList(Math.max(0, months.size() - HISTORY_MONTHS), months.size());
+        if (recent.isEmpty()) {
+            return new ForecastReport(scope.currency(), null, null, List.of(), null, null);
+        }
+        List<Long> series = recent.stream().map(MonthlySummary::expensesMinor).toList();
+        YearMonth last = YearMonth.parse(recent.getLast().month());
+        return new ForecastReport(scope.currency(), last.toString(), last.plusMonths(1).toString(),
+                recent.stream().map(m -> new MonthExpense(m.month(), m.expensesMinor())).toList(),
+                Forecasts.movingAverage(series, MOVING_AVERAGE_WINDOW),
+                Forecasts.linearTrend(series));
     }
 
     /**

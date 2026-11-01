@@ -72,6 +72,9 @@ run inside the database in a single pass instead of looping over transactions in
 | `GET /api/v1/reports/top-merchants?limit=10` | Where the money goes: expenses grouped by description | `GROUP BY`, `ORDER BY ... LIMIT` |
 | `GET /api/v1/reports/month-comparison?month=2025-02` | Per-category expenses vs the previous month | conditional aggregation `SUM(CASE ...)` |
 
+| `GET /api/v1/reports/anomalies?threshold=2` | Unusually large expenses: z-score against the *other* expenses of the same category | window frame `EXCLUDE CURRENT ROW` (leave-one-out mean and variance) |
+| `GET /api/v1/reports/forecast` | Next month's expenses: 3-month moving average and linear trend | least-squares line over the last 6 months |
+
 Common filters: `accountId`, `currency`, `from`, `to`. Notes:
 
 - Reports are always in **one currency**; with accounts in several currencies pass `currency` or `accountId`
@@ -80,7 +83,26 @@ Common filters: `accountId`, `currency`, `from`, `to`. Notes:
   would silently skip gaps.
 - Percentages are `null` when the base is zero (e.g. a category bought for the first time).
 
+- **Anomalies** compare each expense with the *other* expenses of its category, so a single huge purchase
+  cannot hide itself by inflating the average it is measured against. A category needs at least 5 expenses,
+  and when the history is perfectly uniform (e.g. identical rent payments) the spread is floored at 5 % of
+  the mean to avoid infinite scores. Deviation is computed from the whole history; `from`/`to` only choose
+  which expenses are reported.
+- The **forecast** is intentionally simple and says which months it used. The trend needs at least 3 months
+  and is floored at 0. It does not model seasonality.
+
 Try it on the demo data: import `samples/statement-sample.csv`, then open `/swagger-ui.html`.
+
+## Budgets
+
+A budget is a monthly limit for one category in one currency.
+
+- `GET/POST /api/v1/budgets`, `GET/PUT/DELETE /api/v1/budgets/{id}`
+- `GET /api/v1/budgets/status?month=2025-02` returns, per budget, what is spent and remaining, the percentage
+  used, a state (`OK`, `WARNING` from 80 %, `EXCEEDED` above 100 %) and a **projection** of the month's total
+  at the current daily pace (`projectedToExceed` warns before the limit is actually hit). Past and future
+  months are not extrapolated. Without `month`, the current month is used.
+- A budget counts only expenses in its own currency, and is removed automatically if its category is deleted.
 
 ## Listing transactions
 
@@ -102,7 +124,7 @@ mvn test
 - [x] 3. Authentication (JWT)
 - [x] 4. CSV statement import with deduplication
 - [x] 5. SQL analytics (window functions, month-over-month, top-N)
-- [ ] 6. Budgets, anomaly detection, forecast
+- [x] 6. Budgets, anomaly detection, forecast
 - [ ] 7. React dashboard
 - [ ] 8. Jupyter analysis notebook
 - [ ] 9. Docker, CI, demo data

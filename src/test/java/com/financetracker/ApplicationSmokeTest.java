@@ -42,7 +42,7 @@ class ApplicationSmokeTest {
         List<String> tables = jdbc.queryForList(
                 "SELECT name FROM sqlite_master WHERE type = 'table'", String.class);
 
-        assertThat(tables).contains("users", "accounts", "categories", "transactions");
+        assertThat(tables).contains("users", "accounts", "categories", "transactions", "budgets");
     }
 
     @Test
